@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نظام طلبات هلال الحرمين</title>
+<style>
+  body { font-family: 'Tahoma', sans-serif; direction: rtl; background: #f5f6fa; margin: 0; padding: 0; }
+  header { background: #004d7a; color: white; padding: 15px; text-align: center; font-size: 1.4em; }
+  nav { background: #007bb5; display: flex; justify-content: center; padding: 10px; }
+  nav button { background: white; border: none; padding: 10px 15px; margin: 0 5px; border-radius: 5px; cursor: pointer; }
+  nav button:hover { background: #e0e0e0; }
+  .section { display: none; padding: 20px; }
+  form { background: white; padding: 15px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  input, select, button { margin-bottom: 10px; padding: 8px; width: 100%; border: 1px solid #ccc; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; background: white; }
+  th, td { border: 1px solid #ccc; padding: 10px; text-align: center; }
+  th { background: #007bb5; color: white; }
+  .status-pending { background: #fff3cd; }
+  .status-approved { background: #d4edda; }
+  .status-rejected { background: #f8d7da; }
+</style>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    // إعدادات Firebase
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const storage = firebase.storage();
+</script>
+</head>
+<body>
+<header>نظام طلبات هلال الحرمين</header>
+<nav>
+  <button onclick="showSection('client')">العميل</button>
+  <button onclick="showSection('service')">خدمة العملاء</button>
+  <button onclick="showSection('accounting')">المحاسب</button>
+</nav>
+
+<!-- واجهة العميل -->
+<div id="client" class="section">
+  <h2>إدخال بيانات العميل</h2>
+  <form id="clientForm">
+    <input type="text" id="clientName" placeholder="اسم العميل" required>
+    <input type="text" id="passportNumber" placeholder="رقم جواز السفر" required>
+    <input type="file" id="passportImage" accept="image/*" required>
+    <select id="serviceType" required>
+      <option value="">اختر نوع الخدمة</option>
+      <option value="عمرة">عمرة</option>
+      <option value="زيارة">زيارة</option>
+      <option value="تذكرة سفر طيران">تذكرة سفر طيران</option>
+      <option value="بر حج">بر حج</option>
+      <option value="موافقات امنية">موافقات امنية</option>
+      <option value="تأشيرة عمل">تأشيرة عمل</option>
+    </select>
+    <input type="text" id="branch" placeholder="الفرع" required>
+    <input type="text" id="agent" placeholder="اسم الوكيل" required>
+    <input type="number" id="agentPrice" placeholder="سعر الوكيل" required>
+    <input type="number" id="clientPrice" placeholder="سعر العميل" required>
+    <button type="submit" style="background:#007bb5; color:white; border:none;">إرسال الطلب</button>
+  </form>
+</div>
+
+<!-- واجهة خدمة العملاء -->
+<div id="service" class="section">
+  <h3>طلبات خدمة العملاء</h3>
+  <h4>قيد المراجعة</h4>
+  <table>
+    <thead>
+      <tr><th>اسم العميل</th><th>الخدمة</th><th>الوكيل</th><th>سعر الوكيل</th><th>سعر العميل</th><th>الحالة</th><th>إجراءات</th></tr>
+    </thead>
+    <tbody id="pendingRequests"></tbody>
+  </table>
+
+  <h4>تم الترحيل</h4>
+  <table>
+    <thead><tr><th>اسم العميل</th><th>الخدمة</th><th>الوكيل</th><th>سعر الوكيل</th><th>سعر العميل</th></tr></thead>
+    <tbody id="approvedRequests"></tbody>
+  </table>
+
+  <h4>مرفوضة</h4>
+  <table>
+    <thead><tr><th>اسم العميل</th><th>الخدمة</th><th>الوكيل</th></tr></thead>
+    <tbody id="rejectedRequests"></tbody>
+  </table>
+</div>
+
+<!-- واجهة المحاسب -->
+<div id="accounting" class="section">
+  <h3>طلبات المحاسب</h3>
+  <label>تصفية حسب:</label>
+  <select id="accountingFilter" onchange="loadAccountingRequests()">
+    <option value="all">الكل</option>
+    <option value="agent">الوكيل</option>
+    <option value="service">الخدمة</option>
+    <option value="paid">مدفوع</option>
+    <option value="unpaid">آجل</option>
+  </select>
+  <table>
+    <thead>
+      <tr><th>اسم العميل</th><th>الخدمة</th><th>الوكيل</th><th>سعر الوكيل</th><th>سعر العميل</th><th>الفرع</th></tr>
+    </thead>
+    <tbody id="accountingRequests"></tbody>
+  </table>
+</div>
+
+<script>
+function showSection(id){
+  document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
+  document.getElementById(id).style.display = 'block';
+}
+showSection('client');
+
+clientForm.onsubmit = async e => {
+  e.preventDefault();
+  const data = {
+    clientName: clientName.value,
+    passportNumber: passportNumber.value,
+    serviceType: serviceType.value,
+    branch: branch.value,
+    agent: agent.value,
+    agentPrice: parseFloat(agentPrice.value),
+    clientPrice: parseFloat(clientPrice.value),
+    status: 'قيد المراجعة',
+    paymentStatus: 'unpaid',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  const file = passportImage.files[0];
+  const ref = storage.ref('passports/' + Date.now() + '_' + file.name);
+  await ref.put(file);
+  data.passportImage = await ref.getDownloadURL();
+  await db.collection('requests').add(data);
+  clientForm.reset();
+};
+
+async function loadServiceRequests(){
+  loadRequestsByStatus('قيد المراجعة', 'pendingRequests', 'status-pending', true);
+  loadRequestsByStatus('تم الترحيل', 'approvedRequests', 'status-approved');
+  loadRequestsByStatus('مرفوض', 'rejectedRequests', 'status-rejected');
+}
+
+async function loadRequestsByStatus(status, elementId, rowClass, actions=false){
+  const tbody = document.getElementById(elementId);
+  tbody.innerHTML = '';
+  const snapshot = await db.collection('requests').where('status','==',status).orderBy('createdAt','desc').get();
+  snapshot.forEach(doc => {
+    const r = doc.data();
+    const tr = document.createElement('tr');
+    tr.className = rowClass;
+    tr.innerHTML = `<td>${r.clientName}</td><td>${r.serviceType}</td><td>${r.agent}</td><td>${r.agentPrice || ''}</td><td>${r.clientPrice || ''}</td>${actions ? `<td>${r.status}</td><td><button onclick=\"updateStatus('${doc.id}','تم الترحيل')\">ترحيل</button><button onclick=\"updateStatus('${doc.id}','مرفوض')\">رفض</button></td>` : ''}`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadAccountingRequests(){
+  const filter = document.getElementById('accountingFilter').value;
+  const tbody = document.getElementById('accountingRequests');
+  tbody.innerHTML = '';
+  let query = db.collection('requests').where('status','==','تم الترحيل');
+  if(filter === 'agent') query = query.orderBy('agent');
+  if(filter === 'service') query = query.orderBy('serviceType');
+  if(filter === 'paid') query = query.where('paymentStatus','==','paid');
+  if(filter === 'unpaid') query = query.where('paymentStatus','==','unpaid');
+  const snapshot = await query.orderBy('createdAt','desc').get();
+  snapshot.forEach(doc => {
+    const r = doc.data();
+    const tr = document.createElement('tr');
+    tr.className = 'status-approved';
+    tr.innerHTML = `<td>${r.clientName}</td><td>${r.serviceType}</td><td>${r.agent}</td><td>${r.agentPrice}</td><td>${r.clientPrice}</td><td>${r.branch}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function updateStatus(id, status){
+  await db.collection('requests').doc(id).update({status});
+  loadServiceRequests();
+  loadAccountingRequests();
+}
+
+loadServiceRequests();
+loadAccountingRequests();
+</script>
+</body>
+</html>
